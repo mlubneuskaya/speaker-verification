@@ -1,12 +1,16 @@
 """Streamlit interface for speaker enrollment and verification."""
 
+import json
 import logging
 import os
 import random
+import re
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import streamlit as st
 import torch
 
@@ -17,7 +21,6 @@ from src.embeddings import EmbeddingExtractor
 from src.enrollment import enroll_speaker
 from src.preprocessing import preprocess_audio
 from src.utils import save_enrollment_timing
-from src.verification import verify_speaker
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,6 +52,28 @@ def get_database(db_path: str) -> SpeakerDatabase:
     return SpeakerDatabase(db_path=db_path)
 
 
+def _load_calibrated_threshold(threshold_path: str, fallback: float) -> float:
+    """Return the calibrated threshold from JSON, or ``fallback`` if absent.
+
+    Parameters
+    ----------
+    threshold_path : str
+        Path to the JSON file produced by Task 0 calibration.
+    fallback : float
+        Value to use when the file does not exist or cannot be parsed.
+    """
+    path = Path(threshold_path)
+    if not path.exists():
+        return fallback
+    try:
+        with open(path, "r") as f:
+            data = json.load(f)
+        return float(data["threshold"])
+    except (KeyError, ValueError, OSError) as exc:
+        logger.warning(f"Could not read calibrated threshold: {exc}; using fallback")
+        return fallback
+
+
 # ---------------------------------------------------------------------------
 # Utility helpers
 # ---------------------------------------------------------------------------
@@ -72,6 +97,23 @@ def _cleanup_temp_files(paths: list[str]) -> None:
             pass
 
 
+def _generate_speaker_id(name: str) -> str:
+    """Derive a unique speaker ID from a display name.
+
+    Parameters
+    ----------
+    name : str
+        Human-readable display name (e.g. ``"Alice Smith"``).
+
+    Returns
+    -------
+    str
+        URL-safe ID such as ``"alice_smith_3f2a1c"``.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "_", name.lower().strip()).strip("_") or "speaker"
+    return f"{slug}_{uuid.uuid4().hex[:6]}"
+
+
 # ---------------------------------------------------------------------------
 # Page: Add Speaker
 # ---------------------------------------------------------------------------
@@ -85,48 +127,26 @@ def page_add_speaker(
     """Render the speaker enrollment page."""
     st.header("Add Speaker")
 
-    user_id = st.text_input("Speaker ID", placeholder="e.g. alice_01")
-    name = st.text_input("Display Name", placeholder="e.g. Alice")
+    name = st.text_input("Name", placeholder="e.g. Alice Smith")
 
-    mode = st.radio(
-        "Input method",
-        options=["Upload files", "Record audio"],
-        horizontal=True,
-    )
-
+    st.caption("Record 3 samples, 3–8 s each.")
     uploads = []
     cols = st.columns(3)
-
-    if mode == "Upload files":
-        for i, col in enumerate(cols):
-            with col:
-                f = st.file_uploader(
-                    f"Sample {i + 1}",
-                    type=["wav", "flac"],
-                    key=f"enroll_upload_{i}",
-                )
-                if f:
-                    st.audio(f, format="audio/wav")
-                    uploads.append(f)
-    else:
-        st.caption("Click the microphone to record each sample (3–8 s recommended).")
-        for i, col in enumerate(cols):
-            with col:
-                f = st.audio_input(f"Sample {i + 1}", key=f"enroll_record_{i}")
-                if f:
-                    uploads.append(f)
+    for i, col in enumerate(cols):
+        with col:
+            f = st.audio_input(f"Sample {i + 1}", key=f"enroll_record_{i}")
+            if f:
+                uploads.append(f)
 
     if st.button("Enroll Speaker", type="primary"):
-        if not user_id.strip():
-            st.error("Please enter a Speaker ID.")
-            return
         if not name.strip():
-            st.error("Please enter a Display Name.")
+            st.error("Please enter a name.")
             return
         if len(uploads) < 3:
             st.error(f"Please provide all 3 samples (got {len(uploads)}).")
             return
 
+        user_id = _generate_speaker_id(name.strip())
         temp_paths: list[str] = []
         try:
             with st.spinner("Processing samples …"):
@@ -140,7 +160,7 @@ def page_add_speaker(
                 _, elapsed = enroll_speaker(
                     extractor=extractor,
                     db=db,
-                    user_id=user_id.strip(),
+                    user_id=user_id,
                     name=name.strip(),
                     audio_paths=temp_paths,
                     target_sr=audio_cfg["sample_rate"],
@@ -148,15 +168,14 @@ def page_add_speaker(
                     frame_length_ms=audio_cfg["vad_frame_length_ms"],
                 )
                 save_enrollment_timing(
-                    user_id=user_id.strip(),
+                    user_id=user_id,
                     n_samples=len(temp_paths),
                     total_seconds=elapsed,
                     reports_dir=cfg["paths"]["reports"],
                 )
             st.success(
-                f"Speaker **{name}** enrolled successfully (id: `{user_id}`). "
-                f"Enrollment took **{elapsed:.1f}s** "
-                f"({elapsed / len(temp_paths):.1f}s per sample)."
+                f"Speaker **{name.strip()}** enrolled (id: `{user_id}`). "
+                f"Took **{elapsed:.1f}s** ({elapsed / len(temp_paths):.1f}s/sample)."
             )
         except Exception as exc:
             logger.error(f"Enrollment failed: {exc}")
@@ -168,6 +187,35 @@ def page_add_speaker(
 # ---------------------------------------------------------------------------
 # Page: Verify Speaker
 # ---------------------------------------------------------------------------
+
+
+def _find_speaker_by_name(db: SpeakerDatabase, name: str) -> list[tuple[str, dict]]:
+    """Return all (user_id, record) pairs whose display name matches *name*.
+
+    Comparison is case-insensitive.
+
+    Parameters
+    ----------
+    db : SpeakerDatabase
+        Initialized speaker database.
+    name : str
+        Display name to search for.
+
+    Returns
+    -------
+    list[tuple[str, dict]]
+        Matching ``(user_id, record)`` pairs (empty when no match).
+    """
+    target = name.strip().lower()
+    matches = []
+    for uid in db.list_speakers():
+        try:
+            record = db.get_speaker(uid)
+            if record["name"].lower() == target:
+                matches.append((uid, record))
+        except Exception as exc:
+            logger.warning(f"Could not read record for {uid}: {exc}")
+    return matches
 
 
 def page_verify_speaker(
@@ -183,61 +231,65 @@ def page_verify_speaker(
         st.warning("No speakers enrolled yet. Go to **Add Speaker** first.")
         return
 
-    st.write(
-        "Upload a probe recording. The system will compare it against all "
-        "enrolled speakers and return the best match."
-    )
+    name = st.text_input("Name", placeholder="e.g. Alice Smith")
 
-    probe_file = st.file_uploader(
-        "Probe Audio", type=["wav", "flac"], key="verify_probe"
-    )
-    threshold = st.slider(
-        "Match Threshold (cosine similarity)",
-        min_value=0.0,
-        max_value=1.0,
-        value=float(cfg["thresholds"]["cosine_similarity"]),
-        step=0.01,
-        help="Scores above this value are declared a match.",
-    )
+    st.caption("Click the microphone and speak for 3–8 s.")
+    probe_file = st.audio_input("Probe recording", key="verify_probe_record")
 
-    if probe_file:
-        st.audio(probe_file, format="audio/wav")
+    threshold = _load_calibrated_threshold(
+        threshold_path=cfg["paths"]["calibrated_threshold"],
+        fallback=float(cfg["thresholds"]["cosine_similarity"]),
+    )
 
     if st.button("Verify", type="primary"):
-        if not probe_file:
-            st.error("Please upload a probe audio file.")
+        if not name.strip():
+            st.error("Please enter a name.")
             return
+        if not probe_file:
+            st.error("Please provide a recording.")
+            return
+
+        matches = _find_speaker_by_name(db, name)
+        if not matches:
+            st.error(f"No enrolled speaker named **{name.strip()}**.")
+            return
+        if len(matches) > 1:
+            st.warning(
+                f"{len(matches)} speakers share the name **{name.strip()}**; "
+                "using the first enrolled entry."
+            )
+
+        uid, record = matches[0]
+        template: np.ndarray = record["embedding"]
 
         tmp_path: str | None = None
         try:
             with st.spinner("Verifying …"):
-                tmp_path = _save_upload_to_temp(
-                    probe_file, suffix=Path(probe_file.name).suffix or ".wav"
-                )
+                suffix = Path(getattr(probe_file, "name", "audio.wav")).suffix or ".wav"
+                tmp_path = _save_upload_to_temp(probe_file, suffix=suffix)
                 audio_cfg = cfg["audio"]
-                best_id, best_score, is_match = verify_speaker(
-                    extractor=extractor,
-                    db=db,
-                    audio_path=tmp_path,
-                    threshold=threshold,
+                waveform = preprocess_audio(
+                    tmp_path,
                     target_sr=audio_cfg["sample_rate"],
                     energy_threshold=audio_cfg["vad_energy_threshold"],
                     frame_length_ms=audio_cfg["vad_frame_length_ms"],
                 )
+                probe_emb = extractor.extract(waveform)
+                score = float(np.dot(probe_emb, template))
+                is_match = score >= threshold
 
             if is_match:
-                record = db.get_speaker(best_id)
                 st.success(
-                    f"**Match found**: {record['name']} (id: `{best_id}`)  \n"
-                    f"Similarity score: `{best_score:.4f}`"
+                    f"**Verified** — recording matches **{record['name']}**  \n"
+                    f"Similarity score: `{score:.4f}`"
                 )
             else:
                 st.error(
-                    f"**No match.** Best score: `{best_score:.4f}` "
-                    f"(id: `{best_id}`) — below threshold `{threshold:.2f}`."
+                    f"**Not verified** — score `{score:.4f}` is below "
+                    f"threshold `{threshold:.4f}`."
                 )
 
-            st.metric("Best Cosine Similarity", f"{best_score:.4f}")
+            st.metric("Cosine Similarity", f"{score:.4f}")
 
         except Exception as exc:
             logger.error(f"Verification failed: {exc}")
@@ -253,7 +305,7 @@ def page_verify_speaker(
 
 
 def page_list_speakers(db: SpeakerDatabase) -> None:
-    """Render a table of all enrolled speakers."""
+    """Render a table of all enrolled speakers with per-row delete buttons."""
     st.header("Enrolled Speakers")
 
     enrolled_ids = db.list_speakers()
@@ -261,31 +313,31 @@ def page_list_speakers(db: SpeakerDatabase) -> None:
         st.info("No speakers enrolled yet.")
         return
 
-    rows = []
+    st.caption(f"Total: {len(enrolled_ids)} speaker(s)")
+
+    # Header row
+    h_name, h_id, h_date, h_action = st.columns([2, 2, 2, 1])
+    h_name.markdown("**Name**")
+    h_id.markdown("**ID**")
+    h_date.markdown("**Enrolled**")
+    h_action.markdown("**Delete**")
+    st.divider()
+
     for uid in enrolled_ids:
         try:
             record = db.get_speaker(uid)
-            rows.append(
-                {
-                    "ID": uid,
-                    "Name": record["name"],
-                    "Enrolled": record["metadata"].get("enrollment_date", "—"),
-                }
-            )
         except Exception as exc:
             logger.warning(f"Could not read record for {uid}: {exc}")
+            continue
 
-    import pandas as pd
+        col_name, col_id, col_date, col_btn = st.columns([2, 2, 2, 1])
+        col_name.write(record["name"])
+        col_id.write(f"`{uid}`")
+        col_date.write(record["metadata"].get("enrollment_date", "—"))
 
-    st.dataframe(pd.DataFrame(rows), use_container_width=True)
-    st.caption(f"Total: {len(rows)} speaker(s)")
-
-    with st.expander("Delete a speaker"):
-        del_id = st.selectbox("Select speaker to delete", enrolled_ids)
-        if st.button("Delete", type="secondary"):
+        if col_btn.button("🗑", key=f"del_{uid}", help=f"Delete {record['name']}"):
             try:
-                db.delete_speaker(del_id)
-                st.success(f"Speaker `{del_id}` deleted.")
+                db.delete_speaker(uid)
                 st.rerun()
             except Exception as exc:
                 st.error(f"Delete failed: {exc}")

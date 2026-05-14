@@ -2,6 +2,7 @@
 
 import logging
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -90,7 +91,15 @@ def enroll_speaker(
     )  # TODO a better pooling?
     master_template = l2_normalize(mean_embedding)
 
-    db.add_speaker(user_id=user_id, name=name, embedding=master_template)
+    # Store the video directory names so benchmarks can exclude these clips.
+    enrolled_videos = list({Path(p).parent.name for p in audio_paths})
+
+    db.add_speaker(
+        user_id=user_id,
+        name=name,
+        embedding=master_template,
+        enrolled_videos=enrolled_videos,
+    )
     total_elapsed = time.perf_counter() - t_total_start
     logger.info(
         f"Master template created for '{name}' from {len(embeddings)} samples "

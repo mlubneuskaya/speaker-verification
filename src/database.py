@@ -54,6 +54,7 @@ class SpeakerDatabase:
         user_id: str,
         name: str,
         embedding: np.ndarray,
+        enrolled_videos: list[str] | None = None,
     ) -> None:
         """Enroll a new speaker or overwrite an existing record.
 
@@ -65,12 +66,16 @@ class SpeakerDatabase:
             Human-readable display name.
         embedding : np.ndarray
             L2-normalized master speaker template of shape ``(emb_dim,)``.
+        enrolled_videos : list[str] or None
+            Video IDs (directory names) used to build the template. Stored so
+            benchmarks can exclude these clips from test pairs.
         """
         self._data[user_id] = {
             "name": name,
             "embedding": embedding.tolist(),
             "metadata": {
                 "enrollment_date": datetime.now().isoformat(),
+                "enrolled_videos": enrolled_videos or [],
             },
         }
         self._save()
@@ -137,6 +142,22 @@ class SpeakerDatabase:
         del self._data[user_id]
         self._save()
         logger.info(f"Deleted speaker '{name}' (id={user_id})")
+
+    def get_enrollment_video_map(self) -> dict[str, list[str]]:
+        """Return a mapping of speaker_id -> list of enrolled video IDs.
+
+        Used by the benchmark to exclude enrollment clips from test pairs.
+
+        Returns
+        -------
+        dict[str, list[str]]
+            Keys are speaker IDs; values are video ID lists (may be empty for
+            speakers enrolled via file upload rather than VoxCeleb).
+        """
+        return {
+            uid: record.get("metadata", {}).get("enrolled_videos", [])
+            for uid, record in self._data.items()
+        }
 
     def __len__(self) -> int:
         return len(self._data)

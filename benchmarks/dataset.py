@@ -101,6 +101,8 @@ def build_test_pairs(
     n_genuine: int = 250,
     n_impostor: int = 250,
     seed: int = 42,
+    speaker_ids: list[str] | None = None,
+    excluded_videos: dict[str, list[str]] | None = None,
 ) -> list[AudioPair]:
     """Sample balanced genuine and impostor pairs for evaluation.
 
@@ -119,6 +121,12 @@ def build_test_pairs(
         Number of impostor (different-speaker) pairs.
     seed : int
         Random seed for reproducibility.
+    speaker_ids : list[str] or None
+        If provided, only these speakers are used. Otherwise all indexed
+        speakers are eligible.
+    excluded_videos : dict[str, list[str]] or None
+        Mapping of speaker_id -> list of video IDs to exclude (e.g. videos
+        used during enrollment). Clips from these videos are never sampled.
 
     Returns
     -------
@@ -127,21 +135,34 @@ def build_test_pairs(
     """
     rng = random.Random(seed)
     index = collect_speakers(vc1_dir, vc2_dir)
-    speakers = list(index.keys())
+    excluded_videos = excluded_videos or {}
 
-    # Speakers with at least 2 videos (required for genuine pairs)
-    multi_video_speakers = [
-        s for s in speakers if len(index[s]) >= 2
-    ]
+    if speaker_ids is not None:
+        missing = set(speaker_ids) - set(index)
+        if missing:
+            logger.warning(f"{len(missing)} requested speaker(s) not in index: {missing}")
+        index = {s: index[s] for s in speaker_ids if s in index}
+
+    # Build per-speaker available video map (after exclusions)
+    available: SpeakerIndex = {}
+    for spk, videos in index.items():
+        excl = set(excluded_videos.get(spk, []))
+        filtered = {vid: clips for vid, clips in videos.items() if vid not in excl}
+        if filtered:
+            available[spk] = filtered
+
+    multi_video_speakers = [s for s in available if len(available[s]) >= 2]
 
     genuine_pairs: list[AudioPair] = []
     attempts = 0
     while len(genuine_pairs) < n_genuine and attempts < n_genuine * 20:
         attempts += 1
+        if not multi_video_speakers:
+            break
         speaker = rng.choice(multi_video_speakers)
-        vid1, vid2 = rng.sample(list(index[speaker].keys()), 2)
-        clip1 = rng.choice(index[speaker][vid1])
-        clip2 = rng.choice(index[speaker][vid2])
+        vid1, vid2 = rng.sample(list(available[speaker].keys()), 2)
+        clip1 = rng.choice(available[speaker][vid1])
+        clip2 = rng.choice(available[speaker][vid2])
         genuine_pairs.append(AudioPair(path1=clip1, path2=clip2, label=1))
 
     if len(genuine_pairs) < n_genuine:
@@ -149,21 +170,25 @@ def build_test_pairs(
             f"Only sampled {len(genuine_pairs)} genuine pairs (requested {n_genuine})"
         )
 
+    speakers = list(available.keys())
     impostor_pairs: list[AudioPair] = []
     attempts = 0
     while len(impostor_pairs) < n_impostor and attempts < n_impostor * 20:
         attempts += 1
+        if len(speakers) < 2:
+            break
         sp1, sp2 = rng.sample(speakers, 2)
-        vid1 = rng.choice(list(index[sp1].keys()))
-        vid2 = rng.choice(list(index[sp2].keys()))
-        clip1 = rng.choice(index[sp1][vid1])
-        clip2 = rng.choice(index[sp2][vid2])
+        vid1 = rng.choice(list(available[sp1].keys()))
+        vid2 = rng.choice(list(available[sp2].keys()))
+        clip1 = rng.choice(available[sp1][vid1])
+        clip2 = rng.choice(available[sp2][vid2])
         impostor_pairs.append(AudioPair(path1=clip1, path2=clip2, label=0))
 
     all_pairs = genuine_pairs + impostor_pairs
     rng.shuffle(all_pairs)
     logger.info(
         f"Test set: {len(genuine_pairs)} genuine + {len(impostor_pairs)} impostor "
-        f"= {len(all_pairs)} total pairs"
+        f"= {len(all_pairs)} total pairs "
+        f"({len(available)} speakers, exclusions applied)"
     )
     return all_pairs

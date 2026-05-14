@@ -4,6 +4,7 @@ paths:
   urban_sound: "data/input/UrbanSound8K"
   rir_data: "data/input/RIR"
   speaker_db: "data/speaker_db.json"
+  calibrated_threshold: "data/calibrated_threshold.json"
   pretrained_models: "pretrained_models"
   reports: "reports"
 
@@ -29,8 +30,8 @@ thresholds:
   cosine_similarity: 0.25
 
 benchmarks:
-  n_genuine: 250
-  n_impostor: 250
+  n_genuine: 100
+  n_impostor: 100
   random_seed: 42
   task2:
     n_samples: 500

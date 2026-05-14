@@ -13,12 +13,29 @@ stages:
       - src/utils.py
       - data/input/VoxCeleb1_test
       - data/input/VoxCeleb2_test
-    outs:
+
+  calibrate:
+    desc: "Task 0 – calibrate cosine similarity threshold on unenrolled speakers"
+    cmd: python -m benchmarks.run_benchmarks --tasks 0
+    deps:
+      - config.yaml
+      - benchmarks/dataset.py
+      - benchmarks/metrics.py
+      - benchmarks/run_benchmarks.py
+      - src/config.py
+      - src/database.py
+      - src/embeddings.py
+      - src/preprocessing.py
+      - src/utils.py
       - data/speaker_db.json
+      - data/input/VoxCeleb1_test
+      - data/input/VoxCeleb2_test
+    outs:
+      - data/calibrated_threshold.json
 
   benchmark:
-    desc: "Run all 7 evaluation tasks and save reports"
-    cmd: python -m benchmarks.run_benchmarks
+    desc: "Run evaluation tasks 1-7 on enrolled speakers with excluded enrollment videos"
+    cmd: python -m benchmarks.run_benchmarks --tasks 1 2 3 4 5 6 7
     deps:
       - config.yaml
       - benchmarks/augmentations.py
@@ -26,10 +43,12 @@ stages:
       - benchmarks/metrics.py
       - benchmarks/run_benchmarks.py
       - src/config.py
+      - src/database.py
       - src/embeddings.py
       - src/preprocessing.py
       - src/utils.py
       - data/speaker_db.json
+      - data/calibrated_threshold.json
       - data/input/VoxCeleb1_test
       - data/input/VoxCeleb2_test
     outs:
