@@ -107,7 +107,7 @@ def main() -> None:
     skipped = 0
 
     for speaker_id in speaker_list:
-        if enrolled >= n_users:
+        if len(db) >= n_users:
             break
 
         if speaker_id in already_enrolled:
