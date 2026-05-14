@@ -1,0 +1,172 @@
+schema: '2.0'
+stages:
+  init_db:
+    cmd: python -m scripts.init_database
+    deps:
+    - path: config.yaml
+      hash: md5
+      md5: 447705ab74bcfeeb9709c2895b681e51
+      size: 1128
+    - path: data/input/VoxCeleb1_test
+      hash: md5
+      md5: 14ff0e57de6093520b815f60ddcc333a.dir
+      size: 1290979804
+      nfiles: 4878
+    - path: data/input/VoxCeleb2_test
+      hash: md5
+      md5: bcedb4f0296e80005fb9e364fe9d6b44.dir
+      size: 2609435853
+      nfiles: 36237
+    - path: scripts/init_database.py
+      hash: md5
+      md5: 343ce17048f24d7ed6fc99c8dab9dd2a
+      size: 4885
+    - path: src/config.py
+      hash: md5
+      md5: aa851a5410f710a40c62a0bf2a2d0446
+      size: 854
+    - path: src/database.py
+      hash: md5
+      md5: 71054879720bdccf9c075a439b4729ea
+      size: 5104
+    - path: src/embeddings.py
+      hash: md5
+      md5: bb5960e305d3e6112ef937b6e6c43c72
+      size: 3127
+    - path: src/enrollment.py
+      hash: md5
+      md5: 31c5549631eb102813965b22f1231093
+      size: 3358
+    - path: src/preprocessing.py
+      hash: md5
+      md5: 82e6481aa5960b1194c9a3b11fad4283
+      size: 5803
+    - path: src/utils.py
+      hash: md5
+      md5: f7298dda426ccecbdb7faea575e01a92
+      size: 2599
+  calibrate:
+    cmd: python -m benchmarks.run_benchmarks --tasks 0
+    deps:
+    - path: benchmarks/dataset.py
+      hash: md5
+      md5: e0efef38740dd6033a2d4b24487506bf
+      size: 6453
+    - path: benchmarks/metrics.py
+      hash: md5
+      md5: c690b005b08ae557201d5c8d29a2b8b7
+      size: 3771
+    - path: benchmarks/run_benchmarks.py
+      hash: md5
+      md5: c6cb30510d211fd5683b3fe07bbbd2cd
+      size: 20780
+    - path: config.yaml
+      hash: md5
+      md5: 447705ab74bcfeeb9709c2895b681e51
+      size: 1128
+    - path: data/input/VoxCeleb1_test
+      hash: md5
+      md5: 14ff0e57de6093520b815f60ddcc333a.dir
+      size: 1290979804
+      nfiles: 4878
+    - path: data/input/VoxCeleb2_test
+      hash: md5
+      md5: bcedb4f0296e80005fb9e364fe9d6b44.dir
+      size: 2609435853
+      nfiles: 36237
+    - path: data/speaker_db.json
+      hash: md5
+      md5: cdce5fca4b1b39b72819137aff1ce856
+      size: 558587
+    - path: src/config.py
+      hash: md5
+      md5: aa851a5410f710a40c62a0bf2a2d0446
+      size: 854
+    - path: src/database.py
+      hash: md5
+      md5: 71054879720bdccf9c075a439b4729ea
+      size: 5104
+    - path: src/embeddings.py
+      hash: md5
+      md5: bb5960e305d3e6112ef937b6e6c43c72
+      size: 3127
+    - path: src/preprocessing.py
+      hash: md5
+      md5: 82e6481aa5960b1194c9a3b11fad4283
+      size: 5803
+    - path: src/utils.py
+      hash: md5
+      md5: f7298dda426ccecbdb7faea575e01a92
+      size: 2599
+    outs:
+    - path: data/calibrated_threshold.json
+      hash: md5
+      md5: c41a6a348bf5f2571252e12df8ea7dbf
+      size: 54
+  benchmark:
+    cmd: python -m benchmarks.run_benchmarks --tasks 1 2 3 4 5 6 7
+    deps:
+    - path: benchmarks/augmentations.py
+      hash: md5
+      md5: 123a1b7ecddd56785266b524db14a4bf
+      size: 10836
+    - path: benchmarks/dataset.py
+      hash: md5
+      md5: e0efef38740dd6033a2d4b24487506bf
+      size: 6453
+    - path: benchmarks/metrics.py
+      hash: md5
+      md5: c690b005b08ae557201d5c8d29a2b8b7
+      size: 3771
+    - path: benchmarks/run_benchmarks.py
+      hash: md5
+      md5: c6cb30510d211fd5683b3fe07bbbd2cd
+      size: 20780
+    - path: config.yaml
+      hash: md5
+      md5: 447705ab74bcfeeb9709c2895b681e51
+      size: 1128
+    - path: data/calibrated_threshold.json
+      hash: md5
+      md5: c41a6a348bf5f2571252e12df8ea7dbf
+      size: 54
+    - path: data/input/VoxCeleb1_test
+      hash: md5
+      md5: 14ff0e57de6093520b815f60ddcc333a.dir
+      size: 1290979804
+      nfiles: 4878
+    - path: data/input/VoxCeleb2_test
+      hash: md5
+      md5: bcedb4f0296e80005fb9e364fe9d6b44.dir
+      size: 2609435853
+      nfiles: 36237
+    - path: data/speaker_db.json
+      hash: md5
+      md5: cdce5fca4b1b39b72819137aff1ce856
+      size: 558587
+    - path: src/config.py
+      hash: md5
+      md5: aa851a5410f710a40c62a0bf2a2d0446
+      size: 854
+    - path: src/database.py
+      hash: md5
+      md5: 71054879720bdccf9c075a439b4729ea
+      size: 5104
+    - path: src/embeddings.py
+      hash: md5
+      md5: bb5960e305d3e6112ef937b6e6c43c72
+      size: 3127
+    - path: src/preprocessing.py
+      hash: md5
+      md5: 82e6481aa5960b1194c9a3b11fad4283
+      size: 5803
+    - path: src/utils.py
+      hash: md5
+      md5: f7298dda426ccecbdb7faea575e01a92
+      size: 2599
+    outs:
+    - path: reports/
+      hash: md5
+      md5: acbeae0043723414883ac9faa8ba702c.dir
+      size: 81639
+      nfiles: 24

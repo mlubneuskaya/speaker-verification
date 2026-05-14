@@ -218,3 +218,4 @@ Wikipedia-API==0.14.1
 wrapt==2.1.2
 yarl==1.23.0
 zc.lockfile==4.0
+soundata==1.0.1

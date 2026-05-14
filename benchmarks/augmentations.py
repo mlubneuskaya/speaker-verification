@@ -5,10 +5,12 @@ import os
 import random
 import subprocess
 import tempfile
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
+import soundata
 import soundfile as sf
 import torch
 import torchaudio
@@ -136,8 +138,20 @@ def add_gaussian_noise(waveform: torch.Tensor, snr_db: float) -> torch.Tensor:
 
 
 # ---------------------------------------------------------------------------
-# Task 5: Environmental noise
+# Task 5: Environmental noise (UrbanSound8K via soundata)
 # ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=1)
+def _get_urbansound8k(data_home: str):
+    """Return a cached soundata UrbanSound8K dataset object.
+
+    Parameters
+    ----------
+    data_home : str
+        Parent directory of the ``UrbanSound8K`` folder.
+    """
+    return soundata.initialize("urbansound8k", data_home=data_home)
 
 
 def _load_random_noise_clip(
@@ -146,12 +160,12 @@ def _load_random_noise_clip(
     sample_rate: int,
     rng: random.Random,
 ) -> torch.Tensor:
-    """Load a random noise file and crop/repeat to match ``target_length``.
+    """Load a random UrbanSound8K clip via soundata and fit to ``target_length``.
 
     Parameters
     ----------
     noise_dir : str
-        Directory to search for noise WAV files.
+        Path to the ``UrbanSound8K`` dataset root directory.
     target_length : int
         Required number of samples.
     sample_rate : int
@@ -163,20 +177,22 @@ def _load_random_noise_clip(
     -------
     torch.Tensor
         Noise waveform of shape ``(1, target_length)``.
-
-    Raises
-    ------
-    FileNotFoundError
-        If no WAV files are found in ``noise_dir``.
     """
-    noise_files = list(Path(noise_dir).rglob("*.wav"))
-    if not noise_files:
-        raise FileNotFoundError(f"No WAV noise files found in {noise_dir}")
+    data_home = str(Path(noise_dir).parent)
+    dataset = _get_urbansound8k(data_home)
 
-    noise_path = rng.choice(noise_files)
-    noise_wav, noise_sr = torchaudio.load(str(noise_path))
-    if noise_wav.shape[0] > 1:
-        noise_wav = noise_wav.mean(dim=0, keepdim=True)
+    clip_ids = dataset.clip_ids
+    clip_id = rng.choice(clip_ids)
+    clip = dataset.clip(clip_id)
+
+    audio_data, noise_sr = clip.audio  # numpy array, shape (n_samples,) or (ch, n_samples)
+    if audio_data.ndim == 1:
+        noise_wav = torch.from_numpy(audio_data).unsqueeze(0).float()
+    else:
+        noise_wav = torch.from_numpy(audio_data).float()
+        if noise_wav.shape[0] > 1:
+            noise_wav = noise_wav.mean(dim=0, keepdim=True)
+
     if noise_sr != sample_rate:
         noise_wav = torchaudio.transforms.Resample(noise_sr, sample_rate)(noise_wav)
 
@@ -352,7 +368,8 @@ def apply_reverberation(
 
     rir_path = rng.choice(rir_files)
     try:
-        rir, rir_sr = torchaudio.load(str(rir_path))
+        data, rir_sr = sf.read(str(rir_path), dtype="float32", always_2d=True)
+        rir = torch.from_numpy(data.T)  # (channels, time)
     except Exception as exc:
         logger.error(f"Failed to load RIR from {rir_path}: {exc}")
         raise

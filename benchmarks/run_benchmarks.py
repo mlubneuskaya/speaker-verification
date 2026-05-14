@@ -330,6 +330,28 @@ def run_task4(
     return all_results
 
 
+def _ensure_urbansound8k(noise_dir: str) -> None:
+    """Download UrbanSound8K via soundata if the directory is absent.
+
+    Parameters
+    ----------
+    noise_dir : str
+        Expected path to the UrbanSound8K root (e.g. ``data/input/UrbanSound8K``).
+    """
+    import soundata as _soundata
+
+    if Path(noise_dir).exists():
+        return
+    data_home = str(Path(noise_dir).parent)
+    logger.info(
+        f"UrbanSound8K not found at {noise_dir}; downloading (~6 GB) via soundata …"
+    )
+    dataset = _soundata.initialize("urbansound8k", data_home=data_home)
+    dataset.download()
+    dataset.validate()
+    logger.info("UrbanSound8K download complete.")
+
+
 def run_task5(
     extractor: EmbeddingExtractor,
     pairs: list[AudioPair],
@@ -342,12 +364,7 @@ def run_task5(
 ) -> dict[str, dict[str, float]]:
     """Task 5 – Environmental noise from UrbanSound8K at three SNR levels."""
     logger.info("=== Task 5: Environmental Noise ===")
-    noise_path = Path(noise_dir)
-    if not noise_path.exists():
-        logger.warning(
-            f"UrbanSound8K directory not found at {noise_dir}; skipping Task 5"
-        )
-        return {}
+    _ensure_urbansound8k(noise_dir)
 
     subset = pairs[:n_samples]
     all_results: dict[str, dict[str, float]] = {}
