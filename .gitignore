@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+*.egg-info/
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# IDEs
+.idea/
+
+# Claude Code internal files
+.claude/
+
+# DVC-tracked outputs (pointer .dvc files are committed, not the contents)
+/pretrained_models
+/reports

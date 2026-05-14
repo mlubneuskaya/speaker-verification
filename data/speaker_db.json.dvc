@@ -1,0 +1,5 @@
+outs:
+- md5: 6ab35baf655bfe825ad75133648f93a7
+  size: 866036
+  hash: md5
+  path: speaker_db.json

@@ -1,0 +1,12 @@
+.git
+.idea
+__pycache__
+*.pyc
+*.pyo
+.DS_Store
+data/input/
+pretrained_models/
+reports/
+*.egg-info
+.venv
+venv

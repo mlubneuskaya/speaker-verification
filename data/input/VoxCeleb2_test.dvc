@@ -1,0 +1,6 @@
+outs:
+- md5: bcedb4f0296e80005fb9e364fe9d6b44.dir
+  size: 2609435853
+  nfiles: 36237
+  hash: md5
+  path: VoxCeleb2_test

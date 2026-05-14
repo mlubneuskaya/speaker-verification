@@ -1,0 +1,54 @@
+paths:
+  vc1_data: "data/input/VoxCeleb1_test"
+  vc2_data: "data/input/VoxCeleb2_test"
+  urban_sound: "data/input/UrbanSound8K"
+  rir_data: "data/input/RIR"
+  speaker_db: "data/speaker_db.json"
+  pretrained_models: "pretrained_models"
+  reports: "reports"
+
+model:
+  source: "speechbrain/spkrec-ecapa-voxceleb"
+  savedir: "pretrained_models/spkrec-ecapa-voxceleb"
+
+audio:
+  sample_rate: 16000
+  min_duration_sec: 3.0
+  max_duration_sec: 8.0
+  vad_energy_threshold: 0.005
+  vad_frame_length_ms: 20.0
+
+enrollment:
+  num_samples: 3
+
+init_db:
+  n_users: 100
+  seed: 42
+
+thresholds:
+  cosine_similarity: 0.25
+
+benchmarks:
+  n_genuine: 250
+  n_impostor: 250
+  random_seed: 42
+  task2:
+    n_samples: 500
+    amplitude_factors: [25.0, 1.0, 0.04]
+  task3:
+    naive_steps: [2, 5, 10]
+    interp_factors: [2, 5, 10]
+  task4:
+    n_samples: 100
+    snr_levels_db: [40, 20, 10]
+  task5:
+    n_samples: 100
+    snr_levels_db: [20, 10, 0]
+  task6:
+    n_samples: 100
+    codecs:
+      mp3: [32, 128, 320]
+      aac: [32, 128, 320]
+      opus: [16, 64, 128]
+  task7:
+    n_samples: 100
