@@ -1,0 +1,36 @@
+stages:
+  init_db:
+    desc: "Enroll speakers from VoxCeleb1/2 into the speaker database"
+    cmd: python -m scripts.init_database
+    deps:
+      - config.yaml
+      - scripts/init_database.py
+      - src/config.py
+      - src/database.py
+      - src/embeddings.py
+      - src/enrollment.py
+      - src/preprocessing.py
+      - src/utils.py
+      - data/input/VoxCeleb1_test
+      - data/input/VoxCeleb2_test
+    outs:
+      - data/speaker_db.json
+
+  benchmark:
+    desc: "Run all 7 evaluation tasks and save reports"
+    cmd: python -m benchmarks.run_benchmarks
+    deps:
+      - config.yaml
+      - benchmarks/augmentations.py
+      - benchmarks/dataset.py
+      - benchmarks/metrics.py
+      - benchmarks/run_benchmarks.py
+      - src/config.py
+      - src/embeddings.py
+      - src/preprocessing.py
+      - src/utils.py
+      - data/speaker_db.json
+      - data/input/VoxCeleb1_test
+      - data/input/VoxCeleb2_test
+    outs:
+      - reports/
