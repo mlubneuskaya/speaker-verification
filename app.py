@@ -300,6 +300,152 @@ def page_verify_speaker(
 
 
 # ---------------------------------------------------------------------------
+# Page: Identify Speaker
+# ---------------------------------------------------------------------------
+
+
+def _score_against_database(
+    extractor: EmbeddingExtractor,
+    db: SpeakerDatabase,
+    audio_path: str,
+    cfg: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Score one probe recording against every enrolled speaker.
+
+    Parameters
+    ----------
+    extractor : EmbeddingExtractor
+        Initialized embedding extractor.
+    db : SpeakerDatabase
+        Speaker database with enrolled templates.
+    audio_path : str
+        Probe audio file path.
+    cfg : dict[str, Any]
+        Application configuration.
+
+    Returns
+    -------
+    list[dict[str, Any]]
+        Rows sorted by descending similarity score. Each row contains
+        ``rank``, ``user_id``, ``name``, and ``score``.
+    """
+    audio_cfg = cfg["audio"]
+    waveform = preprocess_audio(
+        audio_path,
+        target_sr=audio_cfg["sample_rate"],
+        energy_threshold=audio_cfg["vad_energy_threshold"],
+        frame_length_ms=audio_cfg["vad_frame_length_ms"],
+    )
+    probe_emb = extractor.extract(waveform)
+
+    rows: list[dict[str, Any]] = []
+    for uid in db.list_speakers():
+        try:
+            record = db.get_speaker(uid)
+        except Exception as exc:
+            logger.warning(f"Could not read record for {uid}: {exc}")
+            continue
+
+        template: np.ndarray = record["embedding"]
+        rows.append(
+            {
+                "user_id": uid,
+                "name": record["name"],
+                "score": float(np.dot(probe_emb, template)),
+            }
+        )
+
+    rows.sort(key=lambda row: row["score"], reverse=True)
+    for idx, row in enumerate(rows, start=1):
+        row["rank"] = idx
+    return rows
+
+
+def page_identify_speaker(
+    extractor: EmbeddingExtractor,
+    db: SpeakerDatabase,
+    cfg: dict[str, Any],
+) -> None:
+    """Render the open-set speaker identification page."""
+    st.header("Identify Speaker")
+
+    enrolled_ids = db.list_speakers()
+    if not enrolled_ids:
+        st.warning("No speakers enrolled yet. Go to **Add Speaker** first.")
+        return
+
+    st.caption(
+        "Record a probe sample. The system will choose the closest speaker "
+        "from the database."
+    )
+    probe_file = st.audio_input("Probe recording", key="identify_probe_record")
+
+    threshold = _load_calibrated_threshold(
+        threshold_path=cfg["paths"]["calibrated_threshold"],
+        fallback=float(cfg["thresholds"]["cosine_similarity"]),
+    )
+    top_k = st.slider(
+        "Show top matches",
+        min_value=1,
+        max_value=min(10, len(enrolled_ids)),
+        value=min(5, len(enrolled_ids)),
+    )
+
+    if st.button("Identify", type="primary"):
+        if not probe_file:
+            st.error("Please provide a recording.")
+            return
+
+        tmp_path: str | None = None
+        try:
+            with st.spinner("Identifying …"):
+                suffix = Path(getattr(probe_file, "name", "audio.wav")).suffix or ".wav"
+                tmp_path = _save_upload_to_temp(probe_file, suffix=suffix)
+                scores = _score_against_database(extractor, db, tmp_path, cfg)
+
+            if not scores:
+                st.error("Could not score the recording against the database.")
+                return
+
+            best = scores[0]
+            is_confident = best["score"] >= threshold
+
+            if is_confident:
+                st.success(
+                    f"Best match: **{best['name']}**  \n"
+                    f"ID: `{best['user_id']}`  \n"
+                    f"Similarity score: `{best['score']:.4f}`"
+                )
+            else:
+                st.warning(
+                    f"Closest speaker is **{best['name']}** (`{best['user_id']}`), "
+                    f"but score `{best['score']:.4f}` is below threshold `{threshold:.4f}`."
+                )
+
+            col_score, col_threshold = st.columns(2)
+            col_score.metric("Best Similarity", f"{best['score']:.4f}")
+            col_threshold.metric("Decision Threshold", f"{threshold:.4f}")
+
+            top_rows = [
+                {
+                    "Rank": row["rank"],
+                    "Name": row["name"],
+                    "ID": row["user_id"],
+                    "Score": round(row["score"], 4),
+                }
+                for row in scores[:top_k]
+            ]
+            st.dataframe(top_rows, hide_index=True, use_container_width=True)
+
+        except Exception as exc:
+            logger.error(f"Identification failed: {exc}")
+            st.error(f"Identification failed: {exc}")
+        finally:
+            if tmp_path:
+                _cleanup_temp_files([tmp_path])
+
+
+# ---------------------------------------------------------------------------
 # Page: Enrolled Speakers
 # ---------------------------------------------------------------------------
 
@@ -452,13 +598,20 @@ def main() -> None:
 
     page = st.sidebar.radio(
         "Navigation",
-        options=["Add Speaker", "Verify Speaker", "Enrolled Speakers"],
+        options=[
+            "Add Speaker",
+            "Verify Speaker",
+            "Identify Speaker",
+            "Enrolled Speakers",
+        ],
     )
 
     if page == "Add Speaker":
         page_add_speaker(extractor, db, cfg)
     elif page == "Verify Speaker":
         page_verify_speaker(extractor, db, cfg)
+    elif page == "Identify Speaker":
+        page_identify_speaker(extractor, db, cfg)
     else:
         page_list_speakers(db)
 
