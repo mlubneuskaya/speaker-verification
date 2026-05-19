@@ -51,6 +51,7 @@ def scale_amplitude(waveform: torch.Tensor, factor: float) -> torch.Tensor:
 def naive_subsample(
     waveform: torch.Tensor,
     step: int,
+    orig_sr: int,
     target_sr: int = 16000,
 ) -> torch.Tensor:
     """Decimate by keeping every ``step``-th sample, then upsample back.
@@ -64,8 +65,10 @@ def naive_subsample(
         Input waveform of shape ``(1, time)``.
     step : int
         Decimation factor (keep every ``step``-th sample).
+    orig_sr : int
+        Sample rate of the input waveform before decimation.
     target_sr : int
-        Target sample rate to resample back to after decimation.
+        Sample rate to restore after upsampling.
 
     Returns
     -------
@@ -73,7 +76,7 @@ def naive_subsample(
         Waveform resampled back to ``target_sr``.
     """
     decimated = waveform[:, ::step]
-    decimated_sr = target_sr // step
+    decimated_sr = orig_sr // step
     resampler = torchaudio.transforms.Resample(
         orig_freq=decimated_sr, new_freq=target_sr
     )
@@ -230,6 +233,7 @@ def add_environmental_noise(
     """
     rng = random.Random(seed)
     noise = _load_random_noise_clip(noise_dir, waveform.shape[1], sample_rate, rng)
+    noise = noise.to(waveform.device)
     signal_power = waveform.pow(2).mean()
     noise_power = noise.pow(2).mean()
 
@@ -290,7 +294,8 @@ def apply_codec_compression(
         compressed_path = os.path.join(tmpdir, f"compressed.{ext}")
         output_path = os.path.join(tmpdir, "output.wav")
 
-        audio_np = waveform.squeeze(0).numpy()
+        original_device = waveform.device
+        audio_np = waveform.squeeze(0).cpu().numpy()
         sf.write(input_path, audio_np, sample_rate)
 
         try:
@@ -329,7 +334,10 @@ def apply_codec_compression(
             raise
 
         data, _ = sf.read(output_path, dtype="float32")
-        return torch.tensor(data, dtype=torch.float32).unsqueeze(0)
+        decoded = torch.tensor(data, dtype=torch.float32).unsqueeze(0)
+        # Crop to original length to remove encoder delay/padding
+        decoded = decoded[:, : waveform.shape[1]]
+        return decoded.to(original_device)
 
 
 # ---------------------------------------------------------------------------
@@ -379,10 +387,14 @@ def apply_reverberation(
     if rir_sr != sample_rate:
         rir = torchaudio.transforms.Resample(rir_sr, sample_rate)(rir)
 
+    rir = rir.to(waveform.device)
     rir = rir / (rir.abs().max() + 1e-10)
 
     reverberant = torchaudio.functional.fftconvolve(waveform, rir)
-    reverberant = reverberant[:, : waveform.shape[1]]
+
+    # Align by removing pre-delay: start from the direct-path impulse peak
+    direct_path_idx = int(rir.abs().argmax(dim=-1).item())
+    reverberant = reverberant[:, direct_path_idx : direct_path_idx + waveform.shape[1]]
 
     peak = reverberant.abs().max()
     if peak > 1e-10:

@@ -123,4 +123,9 @@ def evaluate(
     eer, eer_threshold = compute_eer(scores, labels)
     threshold = fixed_threshold if fixed_threshold is not None else eer_threshold
     accuracy = compute_accuracy(scores, labels, threshold)
-    return {"eer": eer, "eer_threshold": eer_threshold, "accuracy": accuracy}
+    return {
+        "eer": eer,
+        "eer_threshold": eer_threshold,   # optimal threshold for this condition
+        "applied_threshold": threshold,   # calibrated threshold used for accuracy
+        "accuracy": accuracy,
+    }
