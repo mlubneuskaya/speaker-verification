@@ -19,3 +19,8 @@ venv/
 # DVC-tracked outputs (pointer .dvc files are committed, not the contents)
 /pretrained_models
 /reports
+/data/input/FREESOUNDCREDITS.txt
+/data/input/UrbanSound8K.tar.gz
+/data/input/UrbanSound8K_README.txt
+/data/input/audio/
+/data/input/metadata/
