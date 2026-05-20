@@ -80,7 +80,9 @@ def naive_subsample(
     resampler = torchaudio.transforms.Resample(
         orig_freq=decimated_sr, new_freq=target_sr
     )
-    return resampler(decimated)
+    #return resampler(decimated)
+    return decimated.repeat_interleave(step, dim=1)[:, : waveform.shape[1]]
+    #return decimated
 
 
 def interpolated_resample(
